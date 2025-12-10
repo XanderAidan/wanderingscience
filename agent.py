@@ -146,6 +146,7 @@ def write_feature_article(article, image_url_for_embedding):
     title = article['title']
     desc = article['description']
     source = article['source']['name']
+    url = article['url'] # <--- This captures the original link
     
     # PROMPT ENGINEERING
     system_instruction = f"""
@@ -160,6 +161,8 @@ def write_feature_article(article, image_url_for_embedding):
     2. NO IMAGE PLACEHOLDERS. Do NOT write "[Suggested Image]" or "[Insert Image Here]".
     3. MANDATORY IMAGE EMBED: You MUST include the following HTML tag exactly as written inside the article body (around the 3rd paragraph):
        <figure class="wp-block-image aligncenter size-large"><img src="{image_url_for_embedding}" alt="Visual context for the research"/><figcaption>Visual context from {source}.</figcaption></figure>
+    4. MANDATORY SOURCE LINK: You MUST end the article with a specific "Sources" section containing this exact HTML link:
+       <p class="source-link"><strong>Source:</strong> <a href="{url}" target="_blank" rel="noopener noreferrer">Read the original reporting at {source}</a></p>
     
     TONE & STYLE:
     - Intellectual but accessible (think 'The Atlantic' meets 'Nature').
@@ -174,7 +177,7 @@ def write_feature_article(article, image_url_for_embedding):
     3. The Science (Deep dive into the mechanism/data)
     4. The Context (Why this matters to Entomology/Neuroscience/Ecology)
     5. The Traveler's Angle (Where can a non-scientist go to see this? A museum? A specific region? A dark sky park?)
-    6. Sources (Cite {source})
+    6. Sources (Link to original story)
     """
     
     user_prompt = f"""

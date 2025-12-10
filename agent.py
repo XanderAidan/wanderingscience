@@ -7,7 +7,8 @@ NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 LLM_API_KEY = os.getenv("LLM_API_KEY")   
 WP_USER = os.getenv("WP_USER")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
-WORDPRESS_URL = "https://wanderingscience.com/wp-json/wp/v2/posts"
+# FIX: Added 'www.' to prevent 301 Redirects that turn POST requests into GET requests
+WORDPRESS_URL = "https://www.wanderingscience.com/wp-json/wp/v2/posts"
 
 # --- 1. PRE-FLIGHT CHECK ---
 if not all([NEWS_API_KEY, LLM_API_KEY, WP_USER, WP_PASSWORD]):
@@ -108,8 +109,13 @@ def post_to_wordpress(title, content):
     try:
         r = requests.post(WORDPRESS_URL, auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers)
         
-        if r.status_code == 201:
-            print(f"✅ SUCCESS! Post is live: {title}")
+        # FIX: Accept both 200 and 201 as success codes (WP sometimes returns 200 on edits/diff configs)
+        if r.status_code in [200, 201]:
+            # Double check it's not a list (which implies a GET request happened)
+            if isinstance(r.json(), list):
+                print(f"❌ Error: It looks like the request was redirected to a GET request (Found {len(r.json())} existing posts). Check your URL protocol/www.")
+            else:
+                print(f"✅ SUCCESS! Post is live: {title}")
         else:
             print(f"❌ WordPress Upload Failed: {r.status_code} - {r.text}")
             

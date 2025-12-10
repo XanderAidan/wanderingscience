@@ -53,7 +53,7 @@ def generate_article(articles):
     
     # Using GPT-4o or Turbo
     payload = {
-        "model": "gpt-4-turbo", 
+        "model": "gpt-3.5-turbo", 
         "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
         "temperature": 0.7 
     }

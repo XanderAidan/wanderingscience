@@ -114,25 +114,28 @@ def write_feature_article(article, image_url_for_embedding):
     
     YOUR TASK: Write a long-form, magazine-style feature article (approx. 1200 words) on the provided topic.
     
+    CRITICAL FORMATTING RULES (STRICT COMPLIANCE REQUIRED):
+    1. OUTPUT PURE HTML ONLY. Do NOT use Markdown (No # for headers, No * for bold). 
+       - CORRECT: <h1>Title</h1>, <h2>Header</h2>, <strong>Bold</strong>.
+       - INCORRECT: # Title, **Bold**.
+    2. NO IMAGE PLACEHOLDERS. Do NOT write "[Suggested Image]" or "[Insert Image Here]".
+    3. MANDATORY IMAGE EMBED: You MUST include the following HTML tag exactly as written inside the article body (around the 3rd paragraph):
+       <figure class="wp-block-image aligncenter size-large"><img src="{image_url_for_embedding}" alt="Visual context for the research"/><figcaption>Visual context from {source}.</figcaption></figure>
+    
     TONE & STYLE:
     - Intellectual but accessible (think 'The Atlantic' meets 'Nature').
     - NARRATIVE FIRST: Do not start with "Recent studies show". Start with a scene, a sensory detail, or a provocative question.
     - SKEPTICAL WONDER: Celebrate the discovery, but analyze the limitations.
-    - NO AI PATTERNS: Strictly forbid the words: "delve", "testament", "tapestry", "landscape", "game-changer", "in conclusion".
-    
-    FORMATTING REQUIREMENTS (Strict HTML):
-    - Use <h2> for section headers.
-    - Use <blockquote> for key insights.
-    - Use <p> for paragraphs (keep them flowing, vary the length).
-    - INJECT IMAGERY: You must include the following image tag somewhere in the middle of the article to break up the text:
-      <figure class="wp-block-image aligncenter size-large"><img src="{image_url_for_embedding}" alt="Visual context for the research"/><figcaption>Visual context from the original report by {source}.</figcaption></figure>
+    - NO AI PATTERNS: Strictly forbid the words: "delve", "testament", "tapestry", "landscape", "game-changer", "in conclusion", "unmasking".
+    - NO HASHTAGS anywhere.
     
     STRUCTURE:
-    1. The Hook (Narrative intro)
-    2. The Science (Deep dive into the mechanism/data)
-    3. The Context (Why this matters to Entomology/Neuroscience/Ecology)
-    4. The Traveler's Angle (Where can a non-scientist go to see this? A museum? A specific region? A dark sky park?)
-    5. Sources (Cite {source} and link to {url})
+    1. <h1>{title}</h1> (Use this exact title tag)
+    2. The Hook (Narrative intro)
+    3. The Science (Deep dive into the mechanism/data)
+    4. The Context (Why this matters to Entomology/Neuroscience/Ecology)
+    5. The Traveler's Angle (Where can a non-scientist go to see this? A museum? A specific region? A dark sky park?)
+    6. Sources (Cite {source} and link to {url})
     """
     
     user_prompt = f"""
@@ -140,7 +143,7 @@ def write_feature_article(article, image_url_for_embedding):
     SUMMARY: {desc}
     SOURCE: {source}
     
-    Write the article now. Do not include a preamble. Start directly with the article title in an <h1> tag, then the body.
+    Write the article now. Start directly with the <h1> tag.
     """
 
     # FALLBACK MODEL LIST (Solves the "Not Found" error)

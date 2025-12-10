@@ -1,24 +1,25 @@
 import os
 import requests
 import sys
+import json
 
 # --- CONFIGURATION ---
 NEWS_API_KEY = os.getenv("NEWS_API_KEY") 
 LLM_API_KEY = os.getenv("LLM_API_KEY")   
 WP_USER = os.getenv("WP_USER")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
-# FIX: Added 'www.' to prevent 301 Redirects that turn POST requests into GET requests
 WORDPRESS_URL = "https://www.wanderingscience.com/wp-json/wp/v2/posts"
 
 # --- 1. PRE-FLIGHT CHECK ---
 if not all([NEWS_API_KEY, LLM_API_KEY, WP_USER, WP_PASSWORD]):
-    print("❌ ERROR: Missing API Keys in Environment.")
+    print("❌ ERROR: Missing API Keys. Check your GitHub Secrets.")
     sys.exit(1)
 
-# --- 2. THE SCOUT ---
+# --- 2. THE SCOUT (NewsAPI) ---
 def fetch_science_news():
     print("🕵️ Scouting for stories...")
-    url = f"https://newsapi.org/v2/everything?q=(biology OR astronomy OR geology OR ecology OR neuroscience OR 'climate change')&domains=nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
+    # Broadened search terms slightly
+    url = f"https://newsapi.org/v2/everything?q=(biology OR astronomy OR geology OR ecology OR neuroscience OR 'climate change')&domains=nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com,phys.org&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
     
     try:
         response = requests.get(url)
@@ -28,72 +29,76 @@ def fetch_science_news():
             print(f"✅ Found {len(data['articles'])} articles.")
             return data['articles'][:3]
         else:
-            print(f"⚠️ NewsAPI Output: {data}")
+            print(f"⚠️ NewsAPI Issue: {data}")
             return None
     except Exception as e:
         print(f"❌ NewsAPI Connection Error: {e}")
         return None
 
-# --- 3. THE CRITIC & WRITER ---
+# --- 3. THE CRITIC & WRITER (Now using Google Gemini) ---
 def generate_article(articles):
-    print("✍️ Writing the article...")
+    print("✍️ Writing the article with Gemini...")
     story = articles[0]
     title = story['title']
     description = story['description']
     source = story['source']['name']
     
-    # BACKUP CONTENT (Used if AI fails due to quota/errors)
+    # BACKUP CONTENT (Safety net)
     backup_content = f"""
-    <!-- BACKUP CONTENT MODE -->
-    <p><strong>(Note: The AI Agent encountered a quota limit, so this is a backup post to verify the pipeline.)</strong></p>
-    
-    <p>It was only a matter of time before the data caught up with the theory. The recent report from {source} regarding <strong>{title}</strong> is less of a surprise and more of a confirmation of what many field researchers have whispered about for years.</p>
-    
-    <p>The implications are fascinating. Usually, when we look at these datasets, we see noise. But here, the signal is clear. The team behind the study managed to isolate variables that have plagued previous attempts.</p>
-    
+    <!-- BACKUP CONTENT -->
+    <p><strong>(Note: Automated verification post.)</strong></p>
+    <p>The recent report from {source} regarding <strong>{title}</strong> is a fascinating confirmation of modern theory.</p>
+    <p>The implications are significant. Usually, when we look at these datasets, we see noise. But here, the signal is clear.</p>
     <h3>The Travel Angle</h3>
-    <p>For those of us who pack bags and head into the field, this changes where we might look next. If this data holds true, the next great frontier isn't in the remote Amazon, but perhaps in the forgotten archival drawers of our local museums.</p>
+    <p>For those of us who pack bags and head into the field, this changes where we might look next.</p>
     """
 
-    system_prompt = "You are a seasoned science travel writer for 'Wandering Science'. Your style is SKEPTICAL BUT WONDROUS. No AI cliches. Write a blog post with a catchy title, 500 words, and a 'Travel Angle' section."
-    user_prompt = f"Write a blog post about: {title}. Context: {description}. Source: {source}."
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LLM_API_KEY}"
-    }
+    # Gemini Prompt Structure
+    system_instruction = """
+    You are a seasoned science travel writer for 'Wandering Science'. 
+    Your style is SKEPTICAL BUT WONDROUS. 
+    NO AI CLICHÉS (delve, tapestry, testament). 
+    Write a blog post with a catchy title, 500 words, HTML formatting (<p>, <h3>), and a 'Travel Angle' section.
+    """
     
-    # Payload for OpenAI
+    user_message = f"Write a blog post about: {title}. Context: {description}. Source: {source}."
+
+    # Gemini API Endpoint (Gemini 1.5 Flash is fast and free-tier eligible)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={LLM_API_KEY}"
+    
+    headers = { "Content-Type": "application/json" }
+    
+    # Gemini JSON Payload
     payload = {
-        "model": "gpt-3.5-turbo", 
-        "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-        "temperature": 0.7 
+        "contents": [{
+            "parts": [{"text": system_instruction + "\n\n" + user_message}]
+        }]
     }
 
     try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
+        response = requests.post(url, headers=headers, json=payload)
         data = response.json()
 
-        # ERROR HANDLING: Catch Quota or API errors gracefully
+        # Check for specific Gemini errors
         if 'error' in data:
-            print(f"⚠️ OpenAI API Error: {data['error']['message']}")
-            print("⚠️ SWITCHING TO BACKUP CONTENT so the workflow finishes.")
+            print(f"⚠️ Gemini API Error: {data['error']['message']}")
             return f"Backup Analysis: {title}", backup_content
 
-        if 'choices' in data:
-            content = data['choices'][0]['message']['content']
-            content = content.replace("```html", "").replace("```", "")
-            return f"Analysis: {title}", content
+        # Parse Gemini Response
+        if 'candidates' in data and data['candidates']:
+            raw_text = data['candidates'][0]['content']['parts'][0]['text']
+            # Clean markdown code blocks just in case
+            clean_text = raw_text.replace("```html", "").replace("```", "")
+            return f"Analysis: {title}", clean_text
         else:
-            print(f"⚠️ Unknown AI Response: {data}")
+            print(f"⚠️ Unexpected Gemini Response: {data}")
             return f"Backup Analysis: {title}", backup_content
 
     except Exception as e:
-        print(f"❌ AI Connection Error: {e}")
-        print("⚠️ SWITCHING TO BACKUP CONTENT.")
+        print(f"❌ Gemini Connection Error: {e}")
         return f"Backup Analysis: {title}", backup_content
 
-# --- 4. THE PUBLISHER ---
+# --- 4. THE PUBLISHER (WordPress) ---
 def post_to_wordpress(title, content):
     if not title: return
 
@@ -109,13 +114,15 @@ def post_to_wordpress(title, content):
     try:
         r = requests.post(WORDPRESS_URL, auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers)
         
-        # FIX: Accept both 200 and 201 as success codes (WP sometimes returns 200 on edits/diff configs)
         if r.status_code in [200, 201]:
-            # Double check it's not a list (which implies a GET request happened)
-            if isinstance(r.json(), list):
-                print(f"❌ Error: It looks like the request was redirected to a GET request (Found {len(r.json())} existing posts). Check your URL protocol/www.")
+            response_json = r.json()
+            if isinstance(response_json, list):
+                print(f"❌ ERROR: Redirected to GET. Check URL: {WORDPRESS_URL}")
+            elif isinstance(response_json, dict) and 'id' in response_json:
+                print(f"✅ SUCCESS! Post Created.")
+                print(f"   🔗 Link: {response_json.get('link')}")
             else:
-                print(f"✅ SUCCESS! Post is live: {title}")
+                print(f"⚠️ Unexpected Response: {response_json}")
         else:
             print(f"❌ WordPress Upload Failed: {r.status_code} - {r.text}")
             
@@ -129,4 +136,4 @@ if __name__ == "__main__":
         title, article_html = generate_article(news)
         post_to_wordpress(title, article_html)
     else:
-        print("🏁 No news found or generation failed.")
+        print("🏁 No news found.")

@@ -205,23 +205,43 @@ def write_feature_article(article, image_url_for_embedding):
         }
     }
 
-    try:
-        response = requests.post(api_url, headers=headers, json=payload)
-        data = response.json()
-        
-        if 'candidates' in data and data['candidates']:
-            raw_html = data['candidates'][0]['content']['parts'][0]['text']
-            clean_html = raw_html.replace("```html", "").replace("```", "").strip()
-            return title, clean_html
-        
-        if 'error' in data:
-            print(f"❌ Gemini API Error: {data['error']['message']}")
-            return None, None
+    # RETRY LOOP FOR RATE LIMITS (Smart Backoff)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(api_url, headers=headers, json=payload)
+            
+            # 1. Handle Hard Rate Limit (429)
+            if response.status_code == 429:
+                wait_time = 20
+                print(f"   ⚠️ Rate Limit Hit (429). Waiting {wait_time}s before retry {attempt+1}/{max_retries}...")
+                time.sleep(wait_time)
+                continue
+                
+            data = response.json()
+            
+            # 2. Success Case
+            if 'candidates' in data and data['candidates']:
+                raw_html = data['candidates'][0]['content']['parts'][0]['text']
+                clean_html = raw_html.replace("```html", "").replace("```", "").strip()
+                return title, clean_html
+            
+            # 3. Soft Rate Limit or Other Errors in JSON
+            if 'error' in data:
+                error_msg = data['error']['message']
+                if "quota" in error_msg.lower() or "limit" in error_msg.lower():
+                    print(f"   ⚠️ Quota exceeded message received. Waiting 20s...")
+                    time.sleep(20)
+                    continue
+                else:
+                    print(f"❌ Gemini API Error: {error_msg}")
+                    return None, None
 
-    except Exception as e:
-        print(f"❌ Connection Error: {e}")
-        return None, None
-        
+        except Exception as e:
+            print(f"❌ Connection Error: {e}")
+            return None, None
+            
+    print("❌ All retries failed due to rate limits.")
     return None, None
 
 # --- PHASE 4: THE PUBLISHER ---

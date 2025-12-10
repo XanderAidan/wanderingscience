@@ -2,13 +2,16 @@ name: Run Science Agent
 
 on:
   schedule:
-    # Run at 08:00 UTC everyday
-    - cron: '0 8 */* * *'
-  workflow_dispatch: # Allows you to click a button to run it manually
+    # Runs at 08:00 UTC every day
+    - cron: '0 8 * * *'
+  # This line enables the manual button. 
+  # If you remove it, the button disappears.
+  workflow_dispatch: 
 
 jobs:
-  build:
+  run-agent:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -20,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests openai
+          pip install requests
 
       - name: Run Agent
         env:

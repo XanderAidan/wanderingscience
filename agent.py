@@ -2,6 +2,7 @@ import os
 import requests
 import sys
 import json
+import time
 
 # --- CONFIGURATION ---
 NEWS_API_KEY = os.getenv("NEWS_API_KEY") 
@@ -18,7 +19,7 @@ if not all([NEWS_API_KEY, LLM_API_KEY, WP_USER, WP_PASSWORD]):
 # --- 2. THE SCOUT (NewsAPI) ---
 def fetch_science_news():
     print("🕵️ Scouting for stories...")
-    # We look for stories with images (urlToImage) so our layout looks good
+    # Look for stories with images
     url = f"https://newsapi.org/v2/everything?q=(biology OR astronomy OR geology OR ecology OR neuroscience OR 'climate change')&domains=nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com,phys.org,smithsonianmag.com&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
     
     try:
@@ -29,7 +30,7 @@ def fetch_science_news():
             # Filter for articles that definitely have images
             valid_articles = [a for a in data['articles'] if a.get('urlToImage')]
             print(f"✅ Found {len(valid_articles)} valid articles with images.")
-            return valid_articles[:1] # Return the best one
+            return valid_articles[:1] 
         else:
             print(f"⚠️ NewsAPI Issue: {data}")
             return None
@@ -37,7 +38,7 @@ def fetch_science_news():
         print(f"❌ NewsAPI Connection Error: {e}")
         return None
 
-# --- 3. THE CRITIC & WRITER (Gemini 1.5 Flash) ---
+# --- 3. THE CRITIC & WRITER (Multi-Model Support) ---
 def generate_article(article):
     print("✍️ Writing the deep-dive feature...")
     
@@ -47,33 +48,39 @@ def generate_article(article):
     url = article['url']
     image_url = article['urlToImage']
     
-    # ADVANCED PROMPT ENGINEERING
+    # RICH CONTENT PROMPT
     system_instruction = """
-    You are a senior science editor for 'Wandering Science', a magazine blending rigorous research with travel and exploration.
+    You are a senior science editor for 'Wandering Science'. 
     
-    YOUR MANDATE:
-    1. WRITE LONG: Produce a 1,000+ word deep-dive feature. Do not write short snippets.
-    2. BE ENGAGING: Use a "New Yorker" or "National Geographic" narrative style. Open with a scene, a question, or a vivid description.
-    3. NO AI PATTERNS: Strictly forbidden words: "delve", "testament", "tapestry", "in conclusion", "landscape of", "realm".
-    4. STRUCTURE: Use HTML formatting.
-       - Use <h2> for section headers (at least 3 sections).
-       - Use <blockquote> for impactful insights.
-       - Use <p> for flowing paragraphs.
-    5. CITATIONS: You MUST cite the source material. At the end, include a "Sources & Further Reading" section linking to the original news.
-    6. TRAVEL ANGLE: The final section must be "The Traveler's Perspective" - explaining where in the world a traveler could go to witness this science (museums, field sites, observatories).
+    MANDATE:
+    1. LENGTH: Write a 1,200+ word feature article.
+    2. TONE: Engaging, narrative, high-quality journalism (think 'The Atlantic' or 'NatGeo'). 
+    3. NO AI CLICHÉS: Do not use "delve", "testament", "tapestry", "in conclusion".
+    4. STRUCTURE:
+       - <h2>Catchy Section Headers</h2>
+       - <blockquote>Pull quotes for emphasis</blockquote>
+       - <p>Long, flowing paragraphs.</p>
+    5. IMAGERY PLACEMENT: You cannot upload new images, but you MUST indicate where they should go by writing: 
+       <div class="image-placeholder"><em>[Suggested Image: Description of what would fit here]</em></div>
+    6. CITATIONS: Cite the source ({source}) naturally in the text.
+    7. TRAVEL ANGLE: Conclude with a section on where a traveler can go to experience this science.
     """
     
     user_message = f"""
     TOPIC: {title}
     CONTEXT: {description}
     ORIGINAL SOURCE: {source} ({url})
-    IMAGE CONTEXT: The article will feature an image of: {image_url}
     
-    Write the article now.
+    Write the definitive article on this topic now.
     """
 
-    # FIXED: Changed 'gemini-1.5-flash-latest' to 'gemini-1.5-flash' (Stable version)
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={LLM_API_KEY}"
+    # LIST OF MODELS TO TRY (Fallback strategy)
+    models_to_try = [
+        "gemini-1.5-flash", 
+        "gemini-1.5-flash-001", 
+        "gemini-1.5-pro", 
+        "gemini-pro"
+    ]
     
     headers = { "Content-Type": "application/json" }
     payload = {
@@ -82,35 +89,41 @@ def generate_article(article):
         }]
     }
 
-    try:
-        response = requests.post(api_url, headers=headers, json=payload)
-        data = response.json()
+    # Try each model until one works
+    for model in models_to_try:
+        print(f"   Attempting with model: {model}...")
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={LLM_API_KEY}"
+        
+        try:
+            response = requests.post(api_url, headers=headers, json=payload)
+            data = response.json()
 
-        if 'error' in data:
-            print(f"⚠️ Gemini Error: {data['error']['message']}")
-            return None, None
+            # If successful (found candidates)
+            if 'candidates' in data and data['candidates']:
+                raw_text = data['candidates'][0]['content']['parts'][0]['text']
+                clean_text = raw_text.replace("```html", "").replace("```", "")
+                return f"{title}", clean_text
+            
+            # If error, print and try next model
+            if 'error' in data:
+                print(f"   ⚠️ {model} Failed: {data['error']['message']}")
+                time.sleep(1) # Brief pause before retry
+                continue 
 
-        if 'candidates' in data and data['candidates']:
-            raw_text = data['candidates'][0]['content']['parts'][0]['text']
-            # Clean markdown code blocks
-            clean_text = raw_text.replace("```html", "").replace("```", "")
-            return f"{title}", clean_text
-        else:
-            print(f"⚠️ Unexpected Gemini Response: {data}")
-            return None, None
+        except Exception as e:
+            print(f"   ❌ Connection Error with {model}: {e}")
+            continue
 
-    except Exception as e:
-        print(f"❌ Gemini Connection Error: {e}")
-        return None, None
+    print("❌ All models failed.")
+    return None, None
 
-# --- 4. MEDIA UPLOADER (New Feature!) ---
+# --- 4. MEDIA UPLOADER ---
 def upload_image_to_wordpress(image_url, title):
     if not image_url: return None
     
     print(f"🖼️ Uploading Featured Image: {image_url}...")
     
     try:
-        # 1. Download image to memory
         img_response = requests.get(image_url)
         if img_response.status_code != 200:
             print("   ⚠️ Could not download image.")
@@ -118,7 +131,6 @@ def upload_image_to_wordpress(image_url, title):
             
         filename = f"science-news-{title[:10].replace(' ', '-').lower()}.jpg"
         
-        # 2. Upload to WordPress
         media_url = f"{WORDPRESS_URL}/media"
         headers = {
             "Content-Disposition": f'attachment; filename="{filename}"',
@@ -151,7 +163,7 @@ def post_to_wordpress(title, content, featured_media_id=None):
         "content": content,
         "status": "publish", 
         "categories": [2],
-        "featured_media": featured_media_id # Attach the uploaded image!
+        "featured_media": featured_media_id
     }
 
     try:
@@ -174,9 +186,7 @@ if __name__ == "__main__":
         title, article_html = generate_article(article)
         
         if title and article_html:
-            # Step 1: Upload Image
             media_id = upload_image_to_wordpress(article.get('urlToImage'), title)
-            # Step 2: Post Article with Image attached
             post_to_wordpress(title, article_html, media_id)
         else:
             print("⚠️ Content generation failed.")

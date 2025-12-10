@@ -38,7 +38,53 @@ def fetch_science_news():
         print(f"❌ NewsAPI Connection Error: {e}")
         return None
 
-# --- 3. THE CRITIC & WRITER (Multi-Model Support) ---
+# --- NEW: MODEL AUTO-DISCOVERY ---
+def find_best_gemini_model():
+    print("🔍 Auto-detecting available Gemini models...")
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={LLM_API_KEY}"
+    
+    try:
+        response = requests.get(list_url)
+        data = response.json()
+        
+        if 'models' not in data:
+            print(f"⚠️ Could not list models. Response: {data}")
+            return "models/gemini-1.5-flash" # Blind fallback
+            
+        # Filter for models that support generating content
+        available_models = [
+            m['name'] for m in data['models'] 
+            if 'generateContent' in m.get('supportedGenerationMethods', [])
+        ]
+        
+        # Priority list (Try to find the best one first)
+        preferences = [
+            "models/gemini-1.5-flash",
+            "models/gemini-1.5-pro",
+            "models/gemini-1.0-pro",
+            "models/gemini-pro"
+        ]
+        
+        # 1. Try to match our preferences exactly
+        for pref in preferences:
+            if pref in available_models:
+                print(f"✅ Selected Optimized Model: {pref}")
+                return pref
+                
+        # 2. If no preference found, take the first available 'gemini' model
+        for model in available_models:
+            if "gemini" in model:
+                print(f"⚠️ Preferred model missing. Using available: {model}")
+                return model
+                
+        print("❌ No valid Gemini models found for this key.")
+        return None
+
+    except Exception as e:
+        print(f"❌ Model Discovery Error: {e}")
+        return "models/gemini-1.5-flash"
+
+# --- 3. THE CRITIC & WRITER ---
 def generate_article(article):
     print("✍️ Writing the deep-dive feature...")
     
@@ -48,6 +94,11 @@ def generate_article(article):
     url = article['url']
     image_url = article['urlToImage']
     
+    # 1. Get the correct model name dynamically
+    model_name = find_best_gemini_model()
+    if not model_name:
+        return None, None
+
     # RICH CONTENT PROMPT
     system_instruction = """
     You are a senior science editor for 'Wandering Science'. 
@@ -74,13 +125,9 @@ def generate_article(article):
     Write the definitive article on this topic now.
     """
 
-    # LIST OF MODELS TO TRY (Fallback strategy)
-    models_to_try = [
-        "gemini-1.5-flash", 
-        "gemini-1.5-flash-001", 
-        "gemini-1.5-pro", 
-        "gemini-pro"
-    ]
+    # 2. Construct URL using the auto-discovered name
+    # Note: model_name usually comes back as 'models/gemini-1.5-flash', so we append it directly
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={LLM_API_KEY}"
     
     headers = { "Content-Type": "application/json" }
     payload = {
@@ -89,32 +136,23 @@ def generate_article(article):
         }]
     }
 
-    # Try each model until one works
-    for model in models_to_try:
-        print(f"   Attempting with model: {model}...")
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={LLM_API_KEY}"
+    try:
+        response = requests.post(api_url, headers=headers, json=payload)
+        data = response.json()
+
+        if 'candidates' in data and data['candidates']:
+            raw_text = data['candidates'][0]['content']['parts'][0]['text']
+            clean_text = raw_text.replace("```html", "").replace("```", "")
+            return f"{title}", clean_text
         
-        try:
-            response = requests.post(api_url, headers=headers, json=payload)
-            data = response.json()
+        if 'error' in data:
+            print(f"❌ Generation Failed: {data['error']['message']}")
+            return None, None
 
-            # If successful (found candidates)
-            if 'candidates' in data and data['candidates']:
-                raw_text = data['candidates'][0]['content']['parts'][0]['text']
-                clean_text = raw_text.replace("```html", "").replace("```", "")
-                return f"{title}", clean_text
-            
-            # If error, print and try next model
-            if 'error' in data:
-                print(f"   ⚠️ {model} Failed: {data['error']['message']}")
-                time.sleep(1) # Brief pause before retry
-                continue 
-
-        except Exception as e:
-            print(f"   ❌ Connection Error with {model}: {e}")
-            continue
-
-    print("❌ All models failed.")
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
+        return None, None
+    
     return None, None
 
 # --- 4. MEDIA UPLOADER ---

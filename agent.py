@@ -152,7 +152,7 @@ def write_feature_article(article, image_url_for_embedding):
     # LIST OF MODELS TO TRY (In order of stability/free-tier limits)
     # We prefer Flash (fast/cheap) -> Flash 8b -> Pro 1.0 (Older/Stable)
     model_cascade = [
-        "gemini-1.5-flash",
+        "gemini-2.5-pro",
         "gemini-1.5-flash-8b",
         "gemini-1.0-pro",
         "gemini-1.5-pro"

@@ -5,12 +5,11 @@ import json
 import time
 import random
 
-# --- CONFIGURATION (Uses your existing secrets) ---
+# --- CONFIGURATION ---
 NEWS_API_KEY = os.getenv("NEWS_API_KEY") 
 LLM_API_KEY = os.getenv("LLM_API_KEY")   
 WP_USER = os.getenv("WP_USER")
 WP_PASSWORD = os.getenv("WP_PASSWORD")
-# Enforcing the 'www' to prevent redirect errors
 WORDPRESS_URL = "https://www.wanderingscience.com/wp-json/wp/v2"
 
 # --- SAFETY CHECKS ---
@@ -18,40 +17,46 @@ if not all([NEWS_API_KEY, LLM_API_KEY, WP_USER, WP_PASSWORD]):
     print("❌ CRITICAL: Missing API Keys. Script cannot run.")
     sys.exit(1)
 
-# --- HELPER: BROWSER HEADERS ---
+# --- HELPER: ROBUST BROWSER HEADERS ---
+# Mimics a real user to bypass WordPress Firewalls (Wordfence/Cloudflare)
 def get_browser_headers():
     return {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://www.google.com/"
     }
 
-# --- NEW HELPER: DUPLICATE CHECKER ---
+# --- DUPLICATE CHECKER ---
 def check_if_post_exists(search_term):
     search_url = f"{WORDPRESS_URL}/posts"
     params = { "search": search_term, "per_page": 1 }
     try:
+        # 10s timeout to prevent hanging
         response = requests.get(search_url, params=params, headers=get_browser_headers(), timeout=10)
-        if response.status_code == 200 and len(response.json()) > 0:
-            return True
+        if response.status_code == 200:
+            if len(response.json()) > 0:
+                print(f"   (Found existing post ID: {response.json()[0]['id']})")
+                return True
     except Exception as e:
         print(f"   ⚠️ Search check failed: {e}")
     return False
 
-# --- PHASE 1: THE SCOUT (General Science) ---
-def fetch_top_science_story():
-    print("🔭 Scouting for a General Science story...")
+# --- PHASE 1: THE SCOUT (Entomology Focus) ---
+def fetch_top_entomology_story():
+    print("🐞 Scouting for the perfect insect story...")
     
-    # Broad Science Query
-    query = "(astronomy OR geology OR biology OR neuroscience OR 'climate change' OR archaeology OR physics)"
-    domains = "nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com,smithsonianmag.com,phys.org,theguardian.com,bbc.com"
+    # Highly specific query for your field
+    query = "(entomology OR insects OR beetles OR ants OR bees OR wasps OR spiders OR arachnids OR lepidoptera OR 'new species')"
+    domains = "nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com,smithsonianmag.com,phys.org,theguardian.com,pensoft.net"
     
     url = f"https://newsapi.org/v2/everything?q={query}&domains={domains}&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
     
     try:
-        response = requests.get(url, headers=get_browser_headers())
+        response = requests.get(url, headers=get_browser_headers(), timeout=20)
         data = response.json()
         
         if data.get('status') == 'ok' and data.get('articles'):
-            # Filter: Must have an image, must not be removed
             valid_articles = [
                 a for a in data['articles'] 
                 if a.get('urlToImage') and "removed" not in a['title'].lower()
@@ -83,26 +88,33 @@ def upload_image_to_wordpress(image_url, title):
     if not image_url: return None, None
     print(f"🖼️ Processing Image: {image_url}...")
     try:
-        img_response = requests.get(image_url, headers=get_browser_headers(), timeout=15)
-        if img_response.status_code != 200: return None, None
+        # Download with browser headers
+        img_response = requests.get(image_url, headers=get_browser_headers(), timeout=20)
+        if img_response.status_code != 200: 
+            print("   ⚠️ Failed to download source image.")
+            return None, None
             
         clean_title = "".join(c for c in title if c.isalnum() or c in (' ','-')).rstrip()
-        filename = f"science-{clean_title[:20].replace(' ', '-').lower()}.jpg"
+        filename = f"insect-{clean_title[:20].replace(' ', '-').lower()}.jpg"
         
         api_url = f"{WORDPRESS_URL}/media"
+        # WP Auth Headers + Browser User Agent
         wp_headers = {
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Type": "image/jpeg",
             "User-Agent": get_browser_headers()["User-Agent"]
         }
         
-        r = requests.post(api_url, auth=(WP_USER, WP_PASSWORD), headers=wp_headers, data=img_response.content, timeout=30)
+        r = requests.post(api_url, auth=(WP_USER, WP_PASSWORD), headers=wp_headers, data=img_response.content, timeout=45)
+        
         if r.status_code == 201:
             data = r.json()
             return data.get('id'), data.get('source_url')
         else:
+            print(f"   ❌ WP Upload Failed: {r.status_code} - {r.text}")
             return None, None
-    except Exception:
+    except Exception as e:
+        print(f"   ❌ Image Processing Error: {e}")
         return None, None
 
 # --- PHASE 3: THE AUTHOR (Gemini Cascade) ---
@@ -114,34 +126,34 @@ def write_feature_article(article, image_url_for_embedding):
     source = article['source']['name']
     url = article['url'] 
     
-    # PROMPT ENGINEERING (General Science Focus)
+    # PROMPT ENGINEERING (Entomology Focus)
     system_instruction = f"""
-    You are the Senior Editor for 'Wandering Science'. You bridge the gap between rigorous academic research and the spirit of exploration.
+    You are the Resident Entomologist for 'Wandering Science'. You specialize in the hidden world of insects and arachnids.
     
-    YOUR TASK: Write a long-form feature article (approx. 1200 words) on the provided topic.
+    YOUR TASK: Write a long-form, magazine-style feature article (approx. 1200 words).
     
-    CRITICAL FORMATTING RULES:
-    1. OUTPUT PURE HTML ONLY. No Markdown (No #, No *). 
-    2. MANDATORY IMAGE EMBED: Include this exact HTML tag around paragraph 3:
-       <figure class="wp-block-image aligncenter size-large"><img src="{image_url_for_embedding}" alt="Scientific context visualization"/><figcaption>Visual context from {source}.</figcaption></figure>
+    CRITICAL RULES:
+    1. OUTPUT PURE HTML ONLY. No Markdown (# or *).
+    2. MANDATORY IMAGE EMBED: Include this HTML tag around paragraph 3:
+       <figure class="wp-block-image aligncenter size-large"><img src="{image_url_for_embedding}" alt="Entomological context"/><figcaption>Visual context from {source}.</figcaption></figure>
     
-    TONE & STYLE:
-    - Intellectual, narrative-driven journalism (think 'The Atlantic' or 'National Geographic').
-    - Start with a scene, a question, or a sensory detail. Do not start with "A new study says".
-    - NO AI PATTERNS: Do not use "delve", "testament", "tapestry", "unmasking", "in conclusion".
+    TONE:
+    - Passionate about the "small world". Make the reader care about bugs.
+    - Start with a scene or behavioral observation (e.g., "Deep in the leaf litter...").
+    - NO AI PATTERNS: Do not use "delve", "testament", "tapestry", "tiny titans", "in conclusion".
     
     STRUCTURE:
     1. <h1>{title}</h1>
-    2. The Narrative Hook (Draw the reader in)
-    3. The Hard Science (Explain the mechanism/discovery depth)
-    4. The Broader Context (Why this matters to our understanding of the universe/earth)
-    5. The Traveler's Perspective (Where can a non-scientist go to witness this? Museums? Field sites?)
+    2. The Micro Hook (Zooming in)
+    3. The Discovery (Data/Behavior analysis)
+    4. Ecological Context (The web of life)
+    5. The Field Angle (Where can a traveler go to see this?)
     """
     
     user_prompt = f"HEADLINE: {title}\nSUMMARY: {desc}\nSOURCE: {source}\n\nWrite the article now. Start directly with the <h1> tag."
 
-    # Using the latest Flash models as requested
-    model_cascade = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro"]
+    # Model Cascade (Latest Flash -> Older Stable)
+    model_cascade = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro"]
     
     headers = { "Content-Type": "application/json" }
     payload = {
@@ -155,7 +167,8 @@ def write_feature_article(article, image_url_for_embedding):
 
         try:
             response = requests.post(api_url, headers=headers, json=payload)
-            if response.status_code == 429: continue # Rate limit, try next
+            if response.status_code == 429: 
+                continue # Rate limit, try next immediately
                 
             data = response.json()
             if 'candidates' in data and data['candidates']:
@@ -171,7 +184,12 @@ def write_feature_article(article, image_url_for_embedding):
                 """
                 return title, clean_html + source_footer
             
+            if 'error' in data:
+                 print(f"   ⚠️ Error from {model}: {data['error']['message']}")
+                 continue
+
         except Exception as e:
+            print(f"   ❌ Connection Error ({model}): {e}")
             continue
 
     print("❌ All AI models failed.")
@@ -181,22 +199,35 @@ def write_feature_article(article, image_url_for_embedding):
 def publish_to_wordpress(title, content, media_id):
     if not content: return
     print("🚀 Publishing to Wandering Science...")
+    
     post_data = {
         "title": title,
         "content": content,
         "status": "publish",
-        "categories": [2], 
+        "categories": [2], # Ensure this ID matches your 'Entomology' or 'Science' category
         "featured_media": media_id
     }
-    try:
-        headers = { "User-Agent": get_browser_headers()["User-Agent"] }
-        r = requests.post(f"{WORDPRESS_URL}/posts", auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers, timeout=30)
-        if r.status_code in [200, 201]: print(f"✅ SUCCESS! Article Live: {r.json().get('link')}")
-        else: print(f"❌ Publish Failed: {r.status_code} - {r.text}")
-    except Exception as e: print(f"❌ Publish Network Error: {e}")
+    
+    # Retry Loop for Connection Timeouts
+    for attempt in range(3):
+        try:
+            # Use Browser Headers to bypass Firewall
+            headers = { "User-Agent": get_browser_headers()["User-Agent"] }
+            r = requests.post(f"{WORDPRESS_URL}/posts", auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers, timeout=45)
+            
+            if r.status_code in [200, 201]: 
+                print(f"✅ SUCCESS! Article Live: {r.json().get('link')}")
+                return
+            else: 
+                print(f"❌ Publish Failed (Attempt {attempt+1}): {r.status_code} - {r.text}")
+                time.sleep(5) # Wait before retry
+                
+        except Exception as e:
+            print(f"❌ Publish Network Error (Attempt {attempt+1}): {e}")
+            time.sleep(5)
 
 if __name__ == "__main__":
-    article = fetch_top_science_story()
+    article = fetch_top_entomology_story()
     if article:
         media_id, uploaded_url = upload_image_to_wordpress(article.get('urlToImage'), article['title'])
         img_ref = uploaded_url if uploaded_url else ""

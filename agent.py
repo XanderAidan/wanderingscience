@@ -97,12 +97,11 @@ def post_to_wordpress(title, content):
         "categories": [2],    # ID of your 'Science' category
     }
 
-    # In a real scenario, you uncomment this:
-    # r = requests.post(WORDPRESS_URL, auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers)
-    # if r.status_code == 201:
-    #     print("Success! Post is live.")
-    # else:
-    #     print(f"Error: {r.status_code}")
+   r = requests.post(WORDPRESS_URL, auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers)
+if r.status_code == 201:
+    print("Success! Post is live.")
+else:
+    print(f"Error: {r.status_code} - {r.text}")
     
     print(f"Simulated Post: '{title}' uploaded successfully.")
 

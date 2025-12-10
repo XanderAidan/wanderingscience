@@ -161,8 +161,6 @@ def write_feature_article(article, image_url_for_embedding):
     2. NO IMAGE PLACEHOLDERS. Do NOT write "[Suggested Image]" or "[Insert Image Here]".
     3. MANDATORY IMAGE EMBED: You MUST include the following HTML tag exactly as written inside the article body (around the 3rd paragraph):
        <figure class="wp-block-image aligncenter size-large"><img src="{image_url_for_embedding}" alt="Visual context for the research"/><figcaption>Visual context from {source}.</figcaption></figure>
-    4. MANDATORY SOURCE LINK: You MUST end the article with a specific "Sources" section containing this exact HTML link:
-       <p class="source-link"><strong>Source:</strong> <a href="{url}" target="_blank" rel="noopener noreferrer">Read the original reporting at {source}</a></p>
     
     TONE & STYLE:
     - Intellectual but accessible (think 'The Atlantic' meets 'Nature').
@@ -177,7 +175,6 @@ def write_feature_article(article, image_url_for_embedding):
     3. The Science (Deep dive into the mechanism/data)
     4. The Context (Why this matters to Entomology/Neuroscience/Ecology)
     5. The Traveler's Angle (Where can a non-scientist go to see this? A museum? A specific region? A dark sky park?)
-    6. Sources (Link to original story)
     """
     
     user_prompt = f"""
@@ -225,8 +222,20 @@ def write_feature_article(article, image_url_for_embedding):
             if 'candidates' in data and data['candidates']:
                 raw_html = data['candidates'][0]['content']['parts'][0]['text']
                 clean_html = raw_html.replace("```html", "").replace("```", "").strip()
+                
+                # --- FORCE SOURCE LINK APPEND ---
+                # We programmatically attach the footer to ensure it always exists.
+                source_footer = f"""
+                <hr class="wp-block-separator has-alpha-channel-opacity"/>
+                <div class="article-source" style="margin-top: 2rem; font-style: italic; color: #555;">
+                    <p><strong>Source:</strong> <a href="{url}" target="_blank" rel="noopener noreferrer">Read the original reporting at {source}</a></p>
+                </div>
+                """
+                
+                final_html = clean_html + source_footer
+                
                 print(f"   ✅ Success with {model}!")
-                return title, clean_html
+                return title, final_html
             
             # Other Errors
             if 'error' in data:

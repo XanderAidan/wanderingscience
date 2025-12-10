@@ -48,7 +48,7 @@ def fetch_top_entomology_story():
     
     # Highly specific query for your field
     query = "(entomology OR insects OR beetles OR ants OR bees OR wasps OR spiders OR arachnids OR lepidoptera OR 'new species')"
-    domains = "nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com,smithsonianmag.com,phys.org,theguardian.com,pensoft.net"
+    domains = "nature.com,scirp.com,mdpi.com,biodiversitydatajournal.com,scientificamerican.com,sciencenews.org,nationalgeographic.com,smithsonianmag.com,phys.org,theguardian.com,pensoft.net"
     
     url = f"https://newsapi.org/v2/everything?q={query}&domains={domains}&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
     

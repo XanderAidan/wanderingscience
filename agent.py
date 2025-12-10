@@ -103,58 +103,13 @@ def upload_image_to_wordpress(image_url, title):
         print(f"   ❌ Image Processing Error: {e}")
         return None, None
 
-# --- NEW: GEMINI MODEL DISCOVERY ---
-def get_best_available_model():
-    """
-    Asks Google 'Which models can I use?' and picks the best one.
-    This fixes the 'model not found' error permanently.
-    """
-    print("🔍 Auto-detecting your available Gemini models...")
-    
-    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={LLM_API_KEY}"
-    
-    try:
-        response = requests.get(list_url)
-        data = response.json()
-        
-        if 'models' not in data:
-            print(f"⚠️ Could not list models. Using fallback.")
-            return "gemini-1.5-flash"
-            
-        # Find all models that support 'generateContent'
-        valid_models = [m['name'].replace('models/', '') for m in data['models'] if 'generateContent' in m.get('supportedGenerationMethods', [])]
-        
-        # Preference order
-        preferences = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro', 'gemini-pro']
-        
-        for pref in preferences:
-            matches = [m for m in valid_models if pref in m]
-            if matches:
-                # Pick the latest version of the preferred model
-                best_match = matches[0] 
-                print(f"✅ Auto-selected model: {best_match}")
-                return best_match
-                
-        # If no preferences found, just take the first valid one
-        if valid_models:
-            print(f"⚠️ Preferences unavailable. Using: {valid_models[0]}")
-            return valid_models[0]
-            
-    except Exception as e:
-        print(f"⚠️ Model Discovery Failed: {e}")
-        
-    return "gemini-1.5-flash" # Ultimate fallback
-
-# --- PHASE 3: THE AUTHOR (Gemini) ---
+# --- PHASE 3: THE AUTHOR (Gemini Cascade) ---
 def write_feature_article(article, image_url_for_embedding):
     print("✍️ Commissioning article from AI...")
     
     title = article['title']
     desc = article['description']
     source = article['source']['name']
-    
-    # 1. Get the correct model dynamically
-    model_name = get_best_available_model()
     
     # PROMPT ENGINEERING
     system_instruction = f"""
@@ -194,7 +149,14 @@ def write_feature_article(article, image_url_for_embedding):
     Write the article now. Start directly with the <h1> tag.
     """
 
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={LLM_API_KEY}"
+    # LIST OF MODELS TO TRY (In order of stability/free-tier limits)
+    # We prefer Flash (fast/cheap) -> Flash 8b -> Pro 1.0 (Older/Stable)
+    model_cascade = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+        "gemini-1.0-pro",
+        "gemini-1.5-pro"
+    ]
     
     headers = { "Content-Type": "application/json" }
     payload = {
@@ -205,43 +167,38 @@ def write_feature_article(article, image_url_for_embedding):
         }
     }
 
-    # RETRY LOOP FOR RATE LIMITS (Smart Backoff)
-    max_retries = 3
-    for attempt in range(max_retries):
+    # Iterate through models until one works
+    for model in model_cascade:
+        print(f"🤖 Attempting generation with model: {model}...")
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={LLM_API_KEY}"
+
         try:
             response = requests.post(api_url, headers=headers, json=payload)
             
-            # 1. Handle Hard Rate Limit (429)
+            # Handle Rate Limit (429) by switching models, NOT waiting
             if response.status_code == 429:
-                wait_time = 20
-                print(f"   ⚠️ Rate Limit Hit (429). Waiting {wait_time}s before retry {attempt+1}/{max_retries}...")
-                time.sleep(wait_time)
-                continue
+                print(f"   ⚠️ Rate limit hit on {model}. Switching to next model...")
+                continue # Skip to next model in list immediately
                 
             data = response.json()
             
-            # 2. Success Case
+            # Success Check
             if 'candidates' in data and data['candidates']:
                 raw_html = data['candidates'][0]['content']['parts'][0]['text']
                 clean_html = raw_html.replace("```html", "").replace("```", "").strip()
+                print(f"   ✅ Success with {model}!")
                 return title, clean_html
             
-            # 3. Soft Rate Limit or Other Errors in JSON
+            # Other Errors
             if 'error' in data:
-                error_msg = data['error']['message']
-                if "quota" in error_msg.lower() or "limit" in error_msg.lower():
-                    print(f"   ⚠️ Quota exceeded message received. Waiting 20s...")
-                    time.sleep(20)
-                    continue
-                else:
-                    print(f"❌ Gemini API Error: {error_msg}")
-                    return None, None
+                print(f"   ⚠️ Error from {model}: {data['error']['message']}")
+                continue # Try next model
 
         except Exception as e:
-            print(f"❌ Connection Error: {e}")
-            return None, None
-            
-    print("❌ All retries failed due to rate limits.")
+            print(f"   ❌ Connection Error ({model}): {e}")
+            continue
+
+    print("❌ All AI models failed to generate content.")
     return None, None
 
 # --- PHASE 4: THE PUBLISHER ---

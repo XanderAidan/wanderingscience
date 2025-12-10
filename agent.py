@@ -15,7 +15,7 @@ WP_PASSWORD = os.getenv("WP_PASSWORD")   # Application Password, not login passw
 def fetch_science_news():
     print("🕵️ Scouting for stories...")
     # Searching for specific high-quality domains to avoid tabloids
-    url = f"https://newsapi.org/v2/everything?q=(biology OR astronomy OR geology OR 'climate change')&domains=nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
+    url = f"https://newsapi.org/v2/everything?q=(biology OR astronomy OR geology OR ecology OR neuroscience OR 'climate change')&domains=nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
     
     response = requests.get(url)
     data = response.json()

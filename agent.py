@@ -72,8 +72,8 @@ def generate_article(article):
     Write the article now.
     """
 
-    # Using 'gemini-1.5-flash-latest' to fix the "not found" error
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={LLM_API_KEY}"
+    # FIXED: Changed 'gemini-1.5-flash-latest' to 'gemini-1.5-flash' (Stable version)
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={LLM_API_KEY}"
     
     headers = { "Content-Type": "application/json" }
     payload = {

@@ -2,8 +2,8 @@ name: Run Science Agent
 
 on:
   schedule:
-    # Run at 08:00 UTC every 4 days
-    - cron: '0 8 */4 * *'
+    # Run at 08:00 UTC everyday
+    - cron: '0 8 */* * *'
   workflow_dispatch: # Allows you to click a button to run it manually
 
 jobs:

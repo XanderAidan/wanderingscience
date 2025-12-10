@@ -25,6 +25,32 @@ def get_browser_headers():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
 
+# --- NEW HELPER: DUPLICATE CHECKER ---
+def check_if_post_exists(search_term):
+    """
+    Queries WordPress to see if a post with this topic already exists.
+    Returns True if a matching post is found.
+    """
+    search_url = f"{WORDPRESS_URL}/posts"
+    params = {
+        "search": search_term,
+        "per_page": 1
+    }
+    
+    try:
+        # Use public GET request to search posts
+        response = requests.get(search_url, params=params, headers=get_browser_headers(), timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if len(data) > 0:
+                print(f"   (Found existing post ID: {data[0]['id']})")
+                return True
+    except Exception as e:
+        print(f"   ⚠️ Search check failed: {e}")
+        
+    return False
+
 # --- PHASE 1: THE SCOUT (NewsAPI) ---
 def fetch_top_science_story():
     print("🕵️ Scouting for the perfect story...")
@@ -45,8 +71,18 @@ def fetch_top_science_story():
             ]
             
             if valid_articles:
-                print(f"✅ Found {len(valid_articles)} candidates. Selecting the best one.")
-                return valid_articles[0] 
+                print(f"✅ Found {len(valid_articles)} candidates. Checking for duplicates...")
+                
+                # Loop through candidates to find a fresh one
+                for article in valid_articles:
+                    if not check_if_post_exists(article['title']):
+                        print(f"   ✨ Selected fresh story: {article['title']}")
+                        return article
+                    else:
+                        print(f"   ⏩ Skipping duplicate: {article['title']}")
+                
+                print("⚠️ All candidates were duplicates.")
+                return None
             else:
                 print("⚠️ Found articles, but none had valid images.")
                 return None

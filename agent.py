@@ -4,39 +4,43 @@ import datetime
 import random
 from datetime import timedelta
 
-# Configuration (You would set these as Environment Variables)
-NEWS_API_KEY = os.getenv("NEWS_API_KEY") # Get from newsapi.org
-LLM_API_KEY = os.getenv("LLM_API_KEY")   # OpenAI or Gemini Key
+# Configuration (These load from your GitHub Secrets / Environment Variables)
+NEWS_API_KEY = os.getenv("NEWS_API_KEY") 
+LLM_API_KEY = os.getenv("LLM_API_KEY")   
 WORDPRESS_URL = "https://wanderingscience.com/wp-json/wp/v2/posts"
 WP_USER = os.getenv("WP_USER")
-WP_PASSWORD = os.getenv("WP_PASSWORD")   # Application Password, not login password
+WP_PASSWORD = os.getenv("WP_PASSWORD")   
 
 # 1. THE SCOUT: Find fresh science news
 def fetch_science_news():
     print("🕵️ Scouting for stories...")
-    # Searching for specific high-quality domains to avoid tabloids
+    # Searching for high-quality domains
     url = f"https://newsapi.org/v2/everything?q=(biology OR astronomy OR geology OR ecology OR neuroscience OR 'climate change')&domains=nature.com,scientificamerican.com,sciencenews.org,nationalgeographic.com&sortBy=publishedAt&language=en&apiKey={NEWS_API_KEY}"
     
-    response = requests.get(url)
-    data = response.json()
-    
-    if data['status'] == 'ok' and data['articles']:
-        # Return the top 3 articles for the Critic to choose from
-        return data['articles'][:3]
-    return None
+    try:
+        response = requests.get(url)
+        data = response.json()
+        
+        if data.get('status') == 'ok' and data.get('articles'):
+            # Return the top 3 articles
+            return data['articles'][:3]
+        else:
+            print(f"⚠️ NewsAPI Error or No Data: {data}")
+            return None
+    except Exception as e:
+        print(f"❌ Connection Error (NewsAPI): {e}")
+        return None
 
 # 2. THE CRITIC & WRITER: Generate the content
 def generate_article(articles):
     print("✍️ Writing the article...")
     
-    # We pick the first one for this example, but you could ask the LLM to pick the best one.
     story = articles[0]
     title = story['title']
     description = story['description']
     source = story['source']['name']
     
-    # THE SECRET SAUCE: The "Anti-AI" System Prompt
-    # This prevents the AI from sounding robotic.
+    # The "Anti-AI" Persona
     system_prompt = """
     You are a seasoned science travel writer for 'Wandering Science'. 
     Your style is:
@@ -57,33 +61,50 @@ def generate_article(articles):
     Make it sound like it was written by a human sitting in a coffee shop, analyzing the news.
     """
 
-    # Pseudo-code for calling an LLM (Replace with actual OpenAI/Gemini call)
-    # response = client.chat.completions.create(
-    #     model="gpt-4-turbo", 
-    #     messages=[
-    #         {"role": "system", "content": system_prompt},
-    #         {"role": "user", "content": user_prompt}
-    #     ]
-    # )
-    # content = response.choices[0].message.content
-    
-    # For the file generation to work without an API key, I am simulating the output:
-    simulated_content = f"""
-    <!-- HTML CONTENT -->
-    <p>It was only a matter of time before the data caught up with the theory. The recent report from {source} regarding {title.lower()} is less of a surprise and more of a confirmation of what many field researchers have whispered about for years.</p>
-    
-    <p>The implications are fascinating. Usually, when we look at these datasets, we see noise. But here, the signal is clear. The team behind the study managed to isolate variables that have plagued previous attempts, resulting in a picture of our biological history that is slightly more complex than the textbooks suggest.</p>
-    
-    <p>I found myself re-reading the methodology section twice. It’s rare to see such elegance in experimental design. It reminds me of the shift we saw in geology a decade ago—a sudden realization that the tools we were using were simply not sensitive enough to hear the story the earth was trying to tell.</p>
-    
-    <h3>The Travel Angle</h3>
-    <p>For those of us who pack bags and head into the field, this changes where we might look next. If this data holds true, the next great frontier isn't in the remote Amazon, but perhaps in the forgotten archival drawers of our local museums.</p>
-    """
-    
-    return f"Analysis: {title}", simulated_content
+    # --- REAL AI CALL (OpenAI Compatible) ---
+    if not LLM_API_KEY:
+        print("❌ Error: LLM_API_KEY is missing.")
+        return None, None
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LLM_API_KEY}"
+    }
+
+    # Using GPT-4o or GPT-4-turbo for best writing quality
+    payload = {
+        "model": "gpt-4-turbo", 
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": 0.7 
+    }
+
+    try:
+        response = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
+        response_data = response.json()
+
+        if 'choices' in response_data:
+            content = response_data['choices'][0]['message']['content']
+            # Clean up potential markdown formatting wrapping
+            content = content.replace("```html", "").replace("```", "")
+            return f"Analysis: {title}", content
+        else:
+            print(f"⚠️ AI API Error: {response_data}")
+            return None, None
+
+    except Exception as e:
+        print(f"❌ Connection Error (AI): {e}")
+        return None, None
+
 
 # 3. THE PUBLISHER: Post to WordPress
 def post_to_wordpress(title, content):
+    if not title or not content:
+        print("⚠️ Skipping upload: No content generated.")
+        return
+
     print("🚀 Publishing to Wandering Science...")
     
     headers = {
@@ -93,21 +114,23 @@ def post_to_wordpress(title, content):
     post_data = {
         "title": title,
         "content": content,
-        "status": "publish",  # Set to 'draft' if you want to review first
-        "categories": [2],    # ID of your 'Science' category
+        "status": "publish", 
+        "categories": [2], # Ensure this Category ID exists in your WP
     }
 
-   r = requests.post(WORDPRESS_URL, auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers)
-if r.status_code == 201:
-    print("Success! Post is live.")
-else:
-    print(f"Error: {r.status_code} - {r.text}")
-    
-    print(f"Simulated Post: '{title}' uploaded successfully.")
+    try:
+        r = requests.post(WORDPRESS_URL, auth=(WP_USER, WP_PASSWORD), json=post_data, headers=headers)
+        
+        if r.status_code == 201:
+            print(f"✅ Success! Post '{title}' is live.")
+        else:
+            print(f"❌ Error {r.status_code}: {r.text}")
+            
+    except Exception as e:
+        print(f"❌ Connection Error (WordPress): {e}")
 
 # Main Execution Flow
 if __name__ == "__main__":
-    # Check if it's time to run (every 4 days logic would be handled by the scheduler, not the script)
     news = fetch_science_news()
     if news:
         title, article_html = generate_article(news)

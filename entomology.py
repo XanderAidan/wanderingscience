@@ -26,7 +26,66 @@ def get_browser_headers():
         "Accept-Language": "en-US,en;q=0.5",
         "Referer": "https://www.google.com/"
     }
+# --- CATEGORY DEFINITIONS ---
+# The agent will scan titles for these keywords to assign categories
+CATEGORY_RULES = {
+    "Entomology": ["insect", "beetle", "ant", "bee", "wasp", "spider", "arachnid", "butterfly", "moth", "fly", "dragonfly", "mosquito", "tick", "entomology", "bug"],
+    "Mycology": ["fungus", "fungi", "mushroom", "mycelium", "spore", "mold", "yeast", "lichen", "mycology", "truffle"],
+    "Ecology": ["ecology", "ecosystem", "habitat", "biodiversity", "conservation", "climate", "extinct", "invasive species", "reef", "forest"],
+    "General Science": [] # Fallback for everything else
+}
 
+# --- SAFETY CHECKS ---
+if not all([NEWS_API_KEY, LLM_API_KEY, WP_USER, WP_PASSWORD]):
+    print("❌ CRITICAL: Missing API Keys. Script cannot run.")
+    sys.exit(1)
+
+# --- HELPER: BROWSER HEADERS ---
+def get_browser_headers():
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+# --- HELPER: WORDPRESS CATEGORY LOOKUP ---
+def get_category_id(cat_name):
+    """
+    Asks WordPress for the ID of a category name (e.g., 'Entomology').
+    Returns the ID if found, otherwise returns 1 (Uncategorized) or 2 (Default).
+    """
+    try:
+        url = f"{WORDPRESS_URL}/categories"
+        params = {"search": cat_name}
+        r = requests.get(url, params=params, headers=get_browser_headers(), timeout=10)
+        
+        if r.status_code == 200:
+            data = r.json()
+            # Find exact match
+            for cat in data:
+                if cat['name'].lower() == cat_name.lower():
+                    return cat['id']
+    except Exception as e:
+        print(f"   ⚠️ Category lookup failed for '{cat_name}': {e}")
+    
+    return 2 # Default fallback ID (usually General or Uncategorized)
+
+def determine_article_category(title, description):
+    """
+    Scans the story to decide which category fits best.
+    """
+    text_to_scan = (title + " " + (description or "")).lower()
+    
+    # Check specific categories first
+    for cat_name, keywords in CATEGORY_RULES.items():
+        if cat_name == "General Science": continue
+        for word in keywords:
+            if word in text_to_scan:
+                print(f"   🏷️ Categorized as: {cat_name} (Matched '{word}')")
+                return get_category_id(cat_name)
+    
+    # Fallback
+    print("   🏷️ Categorized as: General Science")
+    return get_category_id("General Science")
+    
 # --- DUPLICATE CHECKER ---
 def check_if_post_exists(search_term):
     search_url = f"{WORDPRESS_URL}/posts"

@@ -190,7 +190,7 @@ def write_feature_article(article, image_url_for_embedding):
     user_prompt = f"HEADLINE: {title}\nSUMMARY: {desc}\nSOURCE: {source}\n\nWrite the article now. Start directly with the <h1> tag."
 
     # Using the latest Flash models as requested
-    model_cascade = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro"]
+    model_cascade = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.0-pro"]
     
     headers = { "Content-Type": "application/json" }
     payload = {

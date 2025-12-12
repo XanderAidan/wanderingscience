@@ -158,7 +158,7 @@ def write_feature_article(article, image_url_for_embedding):
     headers = { "Content-Type": "application/json" }
     payload = {
         "contents": [{"parts": [{"text": system_instruction + "\n\n" + user_prompt}]}],
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2000}
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 8000}
     }
 
     for model in model_cascade:

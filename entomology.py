@@ -263,7 +263,7 @@ def publish_to_wordpress(title, content, media_id):
         "title": title,
         "content": content,
         "status": "publish",
-        "categories": [2], # Ensure this ID matches your 'Entomology' or 'Science' category
+        "categories": [category_id], # Uses the dynamic ID determined earlier
         "featured_media": media_id
     }
     

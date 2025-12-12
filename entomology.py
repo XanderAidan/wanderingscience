@@ -34,6 +34,45 @@ CATEGORY_RULES = {
     "Ecology": ["ecology", "ecosystem", "habitat", "biodiversity", "conservation", "climate", "extinct", "invasive species", "reef", "forest"],
     "General Science": [] # Fallback for everything else
 }
+# --- HELPER: WORDPRESS CATEGORY LOOKUP ---
+def get_category_id(cat_name):
+    """
+    Asks WordPress for the ID of a category name (e.g., 'Entomology').
+    Returns the ID if found, otherwise returns 1 (Uncategorized) or 2 (Default).
+    """
+    try:
+        url = f"{WORDPRESS_URL}/categories"
+        params = {"search": cat_name}
+        r = requests.get(url, params=params, headers=get_browser_headers(), timeout=10)
+        
+        if r.status_code == 200:
+            data = r.json()
+            # Find exact match
+            for cat in data:
+                if cat['name'].lower() == cat_name.lower():
+                    return cat['id']
+    except Exception as e:
+        print(f"   ⚠️ Category lookup failed for '{cat_name}': {e}")
+    
+    return 2 # Default fallback ID (usually General or Uncategorized)
+
+def determine_article_category(title, description):
+    """
+    Scans the story to decide which category fits best.
+    """
+    text_to_scan = (title + " " + (description or "")).lower()
+    
+    # Check specific categories first
+    for cat_name, keywords in CATEGORY_RULES.items():
+        if cat_name == "General Science": continue
+        for word in keywords:
+            if word in text_to_scan:
+                print(f"   🏷️ Categorized as: {cat_name} (Matched '{word}')")
+                return get_category_id(cat_name)
+    
+    # Fallback
+    print("   🏷️ Categorized as: General Science")
+    return get_category_id("General Science")
 
 # --- SAFETY CHECKS ---
 if not all([NEWS_API_KEY, LLM_API_KEY, WP_USER, WP_PASSWORD]):
